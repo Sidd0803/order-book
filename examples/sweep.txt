@@ -1,0 +1,7 @@
+# A buy that sweeps three ask levels and rests the remainder.
+ADD 1 S 101 10
+ADD 2 S 102 10
+ADD 3 S 103 10
+ADD 4 B 100 5
+ADD 5 B 103 25
+PRINT

@@ -1,0 +1,8 @@
+# Cancel a resting order, an unknown id, and an order that already filled.
+ADD 1 B 99 10
+ADD 2 B 99 10
+CANCEL 1
+CANCEL 42
+ADD 3 S 99 10
+CANCEL 2
+PRINT
