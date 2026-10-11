@@ -226,6 +226,22 @@ TEST_CASE("cancel one of several orders at a level keeps the others in order", "
     CHECK(trades[1].maker_id == 3);
 }
 
+TEST_CASE("cancel several orders from the same level one by one", "[phase1][cancel]") {
+    OrderBook book;
+    add_checked(book, 1, Side::Buy, 100, 10);
+    add_checked(book, 2, Side::Buy, 100, 20);
+    add_checked(book, 3, Side::Buy, 100, 30);
+
+    REQUIRE(book.cancel(3));   // back
+    REQUIRE(book.depth_at(Side::Buy, 100) == 30);
+    REQUIRE(book.cancel(1));   // front
+    REQUIRE(book.depth_at(Side::Buy, 100) == 20);
+    REQUIRE(book.order_count() == 1);
+    REQUIRE(book.cancel(2));   // last one, level must vanish
+    REQUIRE(book.depth_at(Side::Buy, 100) == 0);
+    REQUIRE_FALSE(book.best_bid().has_value());
+}
+
 TEST_CASE("cancel unknown id returns false and changes nothing", "[phase1][cancel]") {
     OrderBook book;
     add_checked(book, 1, Side::Buy, 100, 10);
