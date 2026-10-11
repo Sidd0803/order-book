@@ -1,87 +1,125 @@
 #include "ob/order_book.hpp"
 
+#include <algorithm>
+#include <iterator>
 #include <sstream>
 
 namespace ob {
 
 // ============================================================================
-// Core logic: YOURS to write. The queries further down are already done.
+// Core logic
 // ============================================================================
 
 std::vector<Trade> OrderBook::add(OrderId id, Side side, Price price, Quantity qty) {
     std::vector<Trade> trades;
 
-    // TODO(you) Phase 1, step 1: validation
-    //   - qty == 0            -> reject (return empty, book unchanged)
-    //   - index_ contains id  -> reject (duplicate)
-    //
-    // TODO(you) step 2: build the taker Order with seq = next_seq_++.
-    //   Think: should seq be consumed for rejected orders? (Either is fine,
-    //   but be deliberate. Hint: tests only care that accepted orders are
-    //   ordered by arrival.)
-    //
-    // TODO(you) step 3: match against the opposite side.
-    //   if side == Buy  -> match(taker, asks_, trades)
-    //   if side == Sell -> match(taker, bids_, trades)
-    //
-    // TODO(you) step 4: if taker.qty > 0 after matching, rest(taker).
-    //
-    // Mark unused until implemented (keeps -Wextra quiet):
-    (void)id; (void)side; (void)price; (void)qty;
+    // Validation first, before we touch any state. A rejected order must leave
+    // the book exactly as it was, including next_seq_: rejected orders never
+    // "arrived" as far as time priority is concerned.
+    if (qty == 0) return trades;
+    if (index_.contains(id)) return trades;   // duplicate id
+
+    Order taker{id, side, price, qty, next_seq_++};
+
+    // Match against the OPPOSITE side. A buy consumes asks, a sell consumes
+    // bids. The two maps have different types (different comparators), which
+    // is why match() is a template rather than taking a single map type.
+    if (side == Side::Buy) {
+        match(taker, asks_, trades);
+    } else {
+        match(taker, bids_, trades);
+    }
+
+    // Whatever the taker could not fill rests at its own limit price. It is
+    // now a maker for future orders. If it filled completely there is nothing
+    // to rest and the book never learns this id existed.
+    if (taker.qty > 0) rest(taker);
 
     return trades;
 }
 
 bool OrderBook::cancel(OrderId id) {
-    // TODO(you):
-    //   1. Look up id in index_. Not found -> return false.
-    //   2. Use entry.side + entry.price to find the Level in bids_/asks_.
-    //   3. level.erase(entry.it)          <- O(1), this is why we store the iterator
-    //   4. If the level is now empty, erase the level from the map
-    //      (otherwise best_bid()/best_ask() would report a phantom price).
-    //   5. Erase id from index_. Return true.
-    //
-    // Order of operations matters in step 3-5: once you erase the index
-    // entry, `entry` (if it was a reference into index_) is dangling. Copy it
-    // out first, or erase the index last. <- this is a good deliberate-bug
-    // candidate for LLDB checkpoint 2.
-    (void)id;
-    return false;
+    auto idx = index_.find(id);
+    if (idx == index_.end()) return false;
+
+    // Copy the entry out BEFORE erasing from index_. `idx->second` is a
+    // reference into the hash map; once we erase that node the reference
+    // dangles. Taking a copy makes the order of the remaining steps irrelevant.
+    const IndexEntry entry = idx->second;
+    index_.erase(idx);
+
+    // The index told us which side and price level; the map lookup is
+    // O(log levels). The list erase itself is O(1) because we stored the
+    // exact node iterator. No scanning.
+    if (entry.side == Side::Buy) {
+        auto level_it = bids_.find(entry.price);
+        level_it->second.erase(entry.it);
+        if (level_it->second.empty()) bids_.erase(level_it);
+    } else {
+        auto level_it = asks_.find(entry.price);
+        level_it->second.erase(entry.it);
+        if (level_it->second.empty()) asks_.erase(level_it);
+    }
+    // Removing the empty level matters: best_bid()/best_ask() read
+    // map.begin(), so a leftover empty level would report a phantom price.
+    return true;
 }
 
 template <class OppositeSide>
 void OrderBook::match(Order& taker, OppositeSide& opposite, std::vector<Trade>& trades) {
-    // TODO(you):
-    //   while taker.qty > 0 and opposite is not empty:
-    //       auto level_it = opposite.begin();          // best price on that side
-    //       Price level_price = level_it->first;
-    //       crosses? Buy taker crosses if taker.price >= level_price,
-    //                Sell taker crosses if taker.price <= level_price.
-    //                (Hint: taker.side tells you which rule applies.)
-    //       if not crossing -> break
-    //
-    //       Level& level = level_it->second;
-    //       while taker.qty > 0 and !level.empty():
-    //           Order& maker = level.front();          // earliest arrival = time priority
-    //           Quantity fill = min(taker.qty, maker.qty);
-    //           trades.push_back({taker.id, maker.id, maker.price, fill});
-    //           taker.qty -= fill; maker.qty -= fill;
-    //           if maker.qty == 0: index_.erase(maker.id); level.pop_front();
-    //
-    //       if level.empty(): opposite.erase(level_it);
-    //
-    // Iterator hygiene: after opposite.erase(level_it), level_it is dead.
-    // The loop re-reads opposite.begin() each iteration so that's fine, as
-    // long as you never touch level_it after the erase.
-    (void)taker; (void)opposite; (void)trades;
+    // Outer loop: one iteration per price level, best price first. Because
+    // the map is sorted with the best price at begin(), "best first" is just
+    // "walk from begin()". The loop re-reads begin() every time rather than
+    // holding an iterator across the erase below.
+    while (taker.qty > 0 && !opposite.empty()) {
+        auto level_it = opposite.begin();
+        const Price level_price = level_it->first;
+
+        // Does the taker's limit reach this level? A buyer pays up to its
+        // limit, so it crosses asks priced at or below it. A seller accepts
+        // down to its limit, so it crosses bids priced at or above it.
+        const bool crosses = (taker.side == Side::Buy) ? taker.price >= level_price
+                                                       : taker.price <= level_price;
+        if (!crosses) break;   // levels beyond this one are even worse, stop
+
+        // Inner loop: within the level, oldest order first. front() is the
+        // earliest arrival because rest() appends with push_back. This is the
+        // whole of "time priority": the list order IS the priority order.
+        Level& level = level_it->second;
+        while (taker.qty > 0 && !level.empty()) {
+            Order& maker = level.front();
+            const Quantity fill = std::min(taker.qty, maker.qty);
+
+            // Price is the maker's: it was there first and set the terms.
+            trades.push_back(Trade{taker.id, maker.id, maker.price, fill});
+            taker.qty -= fill;
+            maker.qty -= fill;
+
+            if (maker.qty == 0) {
+                // Fully filled maker leaves the book. Erase from the index
+                // first while `maker` is still a valid reference, then pop.
+                index_.erase(maker.id);
+                level.pop_front();
+            }
+            // A partially filled maker stays at the front with reduced qty,
+            // keeping its place in line.
+        }
+
+        // Emptied the whole level: remove it so the next iteration's begin()
+        // is the next-best price. After this erase, level_it and level are
+        // both invalid, which is why nothing below touches them.
+        if (level.empty()) opposite.erase(level_it);
+    }
 }
 
 void OrderBook::rest(const Order& order) {
-    // TODO(you):
-    //   Pick the map by order.side. operator[] creates the level if missing.
-    //   push_back(order), then record {side, price, iterator-to-the-new-node}
-    //   in index_. std::prev(level.end()) is the node you just appended.
-    (void)order;
+    // operator[] creates the level if it doesn't exist yet (an empty list),
+    // then we append. std::prev(end()) is the node we just added; that
+    // iterator stays valid for the life of the node no matter what else is
+    // inserted or erased around it, which is what makes the index safe.
+    Level& level = (order.side == Side::Buy) ? bids_[order.price] : asks_[order.price];
+    level.push_back(order);
+    index_[order.id] = IndexEntry{order.side, order.price, std::prev(level.end())};
 }
 
 // ============================================================================

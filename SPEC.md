@@ -83,8 +83,8 @@ PRINT
 2. Introduce a deliberate bug (e.g., wrong iterator after erase), reproduce it, and find it with the debugger (and ASan) before looking at the code. Write what you found in `docs/debugging-log.md`.
 
 **Done when:**
-- [ ] All tests pass under Debug and ASan/UBSan builds
-- [ ] CLI demonstrates a sweep, a partial fill, and a cancel
+- [x] All tests pass under Debug and ASan/UBSan builds
+- [x] CLI demonstrates a sweep, a partial fill, and a cancel
 - [ ] Both LLDB checkpoints done and logged
 - [ ] I can explain why list-of-orders-per-level gives time priority, and why `cancel` needs the index
 

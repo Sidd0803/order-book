@@ -1,9 +1,11 @@
 # Partial fill: taker is smaller than the resting maker.
 ADD 1 S 100 50
 ADD 2 B 100 20
-PRINT
-# Time priority: 3 arrived before 4 at the same price, so 3 fills first.
+# Clear the leftover so the next section is only about time priority.
+CANCEL 1
+# Time priority: 3 arrived before 4 at the same price, so 3 fills first,
+# and 4 is untouched until 3 is gone.
 ADD 3 S 105 10
 ADD 4 S 105 10
-ADD 5 B 105 10
+ADD 5 B 105 15
 PRINT
