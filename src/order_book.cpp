@@ -119,7 +119,7 @@ void OrderBook::rest(const Order& order) {
     // inserted or erased around it, which is what makes the index safe.
     Level& level = (order.side == Side::Buy) ? bids_[order.price] : asks_[order.price];
     level.push_back(order);
-    index_[order.id] = IndexEntry{order.side, order.price, level.begin()};
+    index_[order.id] = IndexEntry{order.side, order.price, std::prev(level.end())};
 }
 
 // ============================================================================

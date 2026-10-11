@@ -232,11 +232,12 @@ TEST_CASE("cancel several orders from the same level one by one", "[phase1][canc
     add_checked(book, 2, Side::Buy, 100, 20);
     add_checked(book, 3, Side::Buy, 100, 30);
 
-    REQUIRE(book.cancel(3));   // back
-    REQUIRE(book.depth_at(Side::Buy, 100) == 30);
-    REQUIRE(book.cancel(1));   // front
-    REQUIRE(book.depth_at(Side::Buy, 100) == 20);
-    REQUIRE(book.order_count() == 1);
+    // CHECK (not REQUIRE) so a failure here still runs the later cancels.
+    CHECK(book.cancel(3));   // back
+    CHECK(book.depth_at(Side::Buy, 100) == 30);
+    CHECK(book.cancel(1));   // front
+    CHECK(book.depth_at(Side::Buy, 100) == 20);
+    CHECK(book.order_count() == 1);
     REQUIRE(book.cancel(2));   // last one, level must vanish
     REQUIRE(book.depth_at(Side::Buy, 100) == 0);
     REQUIRE_FALSE(book.best_bid().has_value());
