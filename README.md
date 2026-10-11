@@ -46,9 +46,23 @@ ctest --test-dir build/debug --output-on-failure
 cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DOB_SANITIZE=address,undefined
 cmake -S . -B build/tsan -DCMAKE_BUILD_TYPE=Debug -DOB_SANITIZE=thread
 
-# CLI
+# CLI (phase 1)
 ./build/debug/ob_cli examples/sweep.txt
+
+# Concurrency simulator (phase 2)
+./build/debug/ob_sim --mode engine --producers 4 --orders 200000
+./build/debug/ob_sim --mode locked --producers 4 --orders 200000
+
+# Race demo: compile LockedBook without its mutex, run under TSan
+cmake -S . -B build/tsan-race -DCMAKE_BUILD_TYPE=Debug -DOB_SANITIZE=thread -DOB_RACE_DEMO=ON
+cmake --build build/tsan-race && ./build/tsan-race/ob_tests "[locked]"
 ```
+
+## Where things are
+- `docs/phase2-notes.md`: concurrency concepts mapped to the code.
+- `docs/lldb-checkpoint-*.md`: step-by-step debugger walkthroughs (1-2 phase 1, 3-4 phase 2).
+- `docs/debugging-log.md`: fill in after each checkpoint.
+- Branch `checkpoint2-bug`: a planted memory bug to hunt (see checkpoint 2).
 
 The first configure downloads Catch2 via CMake FetchContent, so it needs
 network access once.

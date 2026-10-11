@@ -37,15 +37,31 @@ if(OB_SANITIZE)
   endif()
 endif()
 
+# Phase 2 race demo: compile LockedBook WITHOUT its mutex so TSan has
+# something to find. Never leave this on.
+option(OB_RACE_DEMO "Remove the lock from LockedBook (for the TSan demo)" OFF)
+
+find_package(Threads REQUIRED)
+
 # --- Core library -----------------------------------------------------------
 add_library(ob
   src/order_book.cpp
+  src/order_gen.cpp
+  src/engine.cpp
 )
 target_include_directories(ob PUBLIC include)
+target_link_libraries(ob PUBLIC Threads::Threads)
+if(OB_RACE_DEMO)
+  message(WARNING "OB_RACE_DEMO is ON: LockedBook is unsynchronised")
+  target_compile_definitions(ob PUBLIC OB_RACE_DEMO)
+endif()
 
 # --- CLI --------------------------------------------------------------------
 add_executable(ob_cli src/main.cpp)
 target_link_libraries(ob_cli PRIVATE ob)
+
+add_executable(ob_sim src/sim_main.cpp)
+target_link_libraries(ob_sim PRIVATE ob)
 
 # --- Tests (Catch2 v3 via FetchContent) ------------------------------------
 include(FetchContent)
@@ -59,6 +75,7 @@ FetchContent_MakeAvailable(Catch2)
 
 add_executable(ob_tests
   tests/test_order_book.cpp
+  tests/test_concurrency.cpp
 )
 target_link_libraries(ob_tests PRIVATE ob Catch2::Catch2WithMain)
 

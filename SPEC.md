@@ -109,7 +109,7 @@ Wrap concurrency *around* `OrderBook` (e.g., `ConcurrentBook` or `Engine`); do n
 2. With the lock deliberately removed, catch an inconsistent state in the debugger, then confirm TSan reports the same race. Log both in `docs/debugging-log.md`.
 
 **Done when:**
-- [ ] 2a and 2b implemented and tested; TSan clean
+- [x] 2a and 2b implemented and tested; TSan clean
 - [ ] Race demonstrated, then fixed, and logged
 - [ ] Both LLDB checkpoints done and logged
 - [ ] I can explain: what a data race is, why a mutex fixes it, what a condition variable is for, and the tradeoff between coarse and fine locking
